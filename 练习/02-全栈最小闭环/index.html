@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>练习 02 · 全栈最小闭环</title>
+
+<!--
+========================================================================
+  阶段 B · 全栈最小闭环（前端部分）
+========================================================================
+
+  先读 ./API.md，再动这个文件。
+
+  这个页面要干的事：
+    1. 打开时请求 GET /api/ping，显示"连接状态"      ✅ 已给出，当范例看
+    2. 点"刷新"请求 GET /api/devices，把列表渲染出来  ⬜ 你来写
+    3. 页面必须有 loading / empty / error 三种状态    ⬜ 你来写
+
+  为什么"三态"这么重要：
+    初级前端只写"成功"那一支。真实环境里，请求会超时、会 500、会返回空数组。
+    面试官问"加载失败怎么办"，答不上来的人直接被归类为"只会跑通 happy path"。
+
+  验收：
+    [ ] 后端没启动时，页面显示错误提示，而不是一片空白
+    [ ] 后端返回空数组时，页面显示"暂无设备"，而不是空白
+    [ ] 请求过程中显示"加载中..."
+    [ ] 用 fetch 而不是 Alert 弹窗（别用 alert 糊弄自己）
+========================================================================
+-->
+
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --text: #e6e8ee;
+    --muted: #8b93a7;
+    --accent: #4c8dff;
+    --line: #262b36;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --err: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px 20px 80px;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.7 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  .page { max-width: 820px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
+
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .status__dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted);
+  }
+  .status--ok .status__dot { background: var(--ok); }
+  .status--err .status__dot { background: var(--err); }
+  .status--loading .status__dot { background: var(--warn); }
+
+  button {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--line);
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--panel);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+  }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+
+  .tag { padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+  .tag--running { background: rgba(52,211,153,.15); color: var(--ok); }
+  .tag--idle    { background: rgba(139,147,167,.15); color: var(--muted); }
+  .tag--fault   { background: rgba(248,113,113,.15); color: var(--err); }
+
+  .placeholder {
+    padding: 40px;
+    text-align: center;
+    color: var(--muted);
+    background: var(--panel);
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    font-size: 14px;
+  }
+
+  .note {
+    background: var(--panel);
+    border-left: 3px solid var(--accent);
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
+    color: var(--muted);
+    font-size: 14px;
+    margin: 20px 0;
+  }
+  code { background: #232833; padding: 2px 6px; border-radius: 4px; font-size: 13px; color: #a8c7ff; }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <h1>练习 02 · 全栈最小闭环</h1>
+  <p class="sub">阶段 B · 第 3–8 周 · 浏览器 → 你的接口 → 数据</p>
+
+  <div class="note">
+    先跑后端：在 <code>练习/02-全栈最小闭环</code> 目录里执行 <code>node server.ts</code>，
+    然后用浏览器打开本文件。
+  </div>
+
+  <div class="bar">
+    <span class="status" id="pingStatus">
+      <span class="status__dot"></span>
+      <span id="pingText">正在连接后端…</span>
+    </span>
+    <button type="button" id="refreshBtn">刷新设备列表</button>
+  </div>
+
+  <!-- 列表区域。下面四种状态对应四种显示，用 JS 控制哪个可见 -->
+  <div id="listArea">
+    <div class="placeholder" id="statePlaceholder">点上方「刷新设备列表」开始</div>
+  </div>
+</div>
+
+<script>
+/* ==========================================================================
+   常量：后端地址
+   ========================================================================== */
+const API_BASE = 'http://localhost:3000';
+
+/* ==========================================================================
+   范例：连接状态检测（已经写好了，读懂它）
+   --------------------------------------------------------------------------
+   这里用的是 fetch + try/catch。
+   注意：fetch 只有"网络层失败"才 reject；
+        服务器返回 500 也是 resolve 的，所以必须自己检查 res.ok。
+        这是新手最常踩的坑之一。
+   ========================================================================== */
+async function checkPing() {
+  const statusEl = document.getElementById('pingStatus');
+  const textEl = document.getElementById('pingText');
+
+  statusEl.className = 'status status--loading';
+  textEl.textContent = '正在连接后端…';
+
+  try {
+    const res = await fetch(`${API_BASE}/api/ping`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    statusEl.className = 'status status--ok';
+    textEl.textContent = `后端已连接 · 服务器时间 ${new Date(data.time).toLocaleTimeString()}`;
+  } catch (err) {
+    statusEl.className = 'status status--err';
+    textEl.textContent = '后端未连接（先运行 node server.ts）';
+    console.error('[ping] 失败:', err);
+  }
+}
+
+/* ==========================================================================
+   TODO 1: 请求设备列表并渲染
+   --------------------------------------------------------------------------
+   要求：
+     - 请求 GET /api/devices
+     - 请求中 → 显示"加载中…"
+     - 成功且有数据 → 渲染表格
+     - 成功但 items 为空 → 显示"暂无设备"
+     - 失败（网络错误 / 非 2xx）→ 显示错误信息，并把 console.error 出来
+     - 渲染期间禁用刷新按钮（防止连点）
+
+   建议拆成三个小函数，别写成一大坨：
+
+     function renderLoading() { ... }   // 显示加载态
+     function renderError(msg) { ... }  // 显示错误态
+     function renderList(items) { ... } // 显示列表 / 空态
+
+   renderList 里用 document.createElement 拼 DOM。
+   ⚠️ 不要用 innerHTML 拼接设备名 —— 如果设备名里有 <script> 会怎样？
+      这叫 XSS。用 textContent，或者一上手就养成好习惯。
+   ========================================================================== */
+
+async function loadDevices() {
+  // TODO: 1) renderLoading()
+  // TODO: 2) fetch(`${API_BASE}/api/devices`)
+  // TODO: 3) 检查 res.ok，不是就抛错
+  // TODO: 4) 拿 data.items，调 renderList
+  // TODO: 5) catch 里调 renderError
+  // TODO: 6) finally 里恢复按钮
+}
+
+/* ==========================================================================
+   TODO 2: 三个渲染函数
+   --------------------------------------------------------------------------
+   DOM 结构提示：
+     列表用 <table>：表头是 序号 / 设备名 / 状态 / 温度 / 更新时间
+     状态列用 <span class="tag tag--running">运行中</span> 这样的小标签
+       running → 运行中    idle → 空闲    fault → 故障
+   ========================================================================== */
+
+// function renderLoading() { }
+// function renderError(message) { }
+// function renderList(items) { }
+
+/* ==========================================================================
+   初始化
+   ========================================================================== */
+checkPing();
+document.getElementById('refreshBtn').addEventListener('click', loadDevices);
+
+/* ==========================================================================
+   进阶（做完基础再碰）：
+
+   1. 让 loadDevices 支持按状态过滤：加三个筛选按钮，请求时带 ?status=fault
+   2. 请求可能乱序返回（你连点两次刷新，慢的那次后到，把新的覆盖了）
+      → 这叫"请求竞态"。用 AbortController 取消上一次请求，或用一个自增的
+        requestId 判断"这是不是最新的一次请求"。
+      这是阶段 C 里 AI 最爱写错的地方，先自己踩一次。
+   3. 加一个"新增设备"的表单，POST 到 /api/devices
+      → 体会一下：前端校验只是体验，后端校验才是安全
+   ========================================================================== */
+</script>
+
+</body>
+</html>

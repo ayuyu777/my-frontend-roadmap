@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>练习 01 · 轮播图复健</title>
+
+<!--
+========================================================================
+  阶段 A · 轮播图复健
+========================================================================
+
+  目的：把手感找回来。不是为了做出一个轮播图，是为了让你在"没有 AI"的
+        情况下，还能独立完成一个有状态、有定时器、有事件、有边界处理的
+        小功能。
+
+  要求：写 3 遍，一遍比一遍难。不要一次写完 3 遍。
+
+  ---------------------------------------------------------------
+  第 1 遍（必须不看 AI、不看教程，60 分钟内）
+  ---------------------------------------------------------------
+  [ ] 点击"下一张 / 上一张"能切换
+  [ ] 每 3 秒自动播放到下一张
+  [ ] 鼠标移入暂停，移出继续
+  [ ] 下方指示点跟着高亮，点击能跳转
+  [ ] 最后一张的下一张回到第一张（循环）
+
+  ---------------------------------------------------------------
+  第 2 遍（重构成可复用的东西）
+  ---------------------------------------------------------------
+  [ ] 把逻辑抽成一个函数或 class：createCarousel(el, options)
+  [ ] 支持配置：autoplay 间隔、是否循环、初始索引
+  [ ] 页面上同时放两个轮播图，互不干扰（考验你会不会污染全局变量）
+  [ ] 提供 destroy() 方法：能清掉定时器和事件监听
+
+  ---------------------------------------------------------------
+  第 3 遍（做工程细节，这一步最值钱）
+  ---------------------------------------------------------------
+  [ ] 无缝滚动（不是"滑回第一张"，是视觉上连续）
+  [ ] 支持鼠标拖拽 / 手机上触摸滑动
+  [ ] 快速连点不出现错位（考验你对状态的管理）
+  [ ] 动画用 transform，不用 left（去 DevTools 的 Performance 面板对比一下）
+  [ ] 页面隐藏时（切到别的标签页）暂停，回来后恢复
+
+  ---------------------------------------------------------------
+  验收标准（自己给自己打分，别糊弄）
+  ---------------------------------------------------------------
+  [ ] 不看任何参考资料，60 分钟内独立完成第 1 遍
+  [ ] 能解释：为什么用 setInterval 而不是 setTimeout 递归？两者的差别是什么？
+  [ ] 能解释：鼠标移入时你是怎么"暂停"的？定时器清了没有？
+  [ ] 能解释：快速连点时你的代码里哪个变量防止了错位？
+  [ ] 能用 Network / Performance 面板说出你这个动画的帧率大概是多少
+
+  ---------------------------------------------------------------
+  学习目标清单（做完对照，缺哪个补哪个）
+  ---------------------------------------------------------------
+  · DOM 查询与修改
+  · 事件监听与解绑
+  · classList / style 操作
+  · 定时器（setInterval / setTimeout / clearInterval）
+  · 状态管理（当前索引、是否播放中、是否正在动画）
+  · 边界处理（第一张、最后一张）
+  · 闭包（把变量封装在函数里而不污染全局）
+  · transform + transition 做动画
+
+  提示（卡住了再看，不要提前看）
+  · 动画结束后再允许下一次切换 → 用一个 isAnimating 标志
+  · 拖拽 → mousedown / mousemove / mouseup，注意把 mousemove 绑在 document 上
+  · 页面隐藏 → document.visibilitychange 事件
+========================================================================
+-->
+
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --text: #e6e8ee;
+    --muted: #8b93a7;
+    --accent: #4c8dff;
+    --line: #262b36;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 32px 20px 80px;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.7 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+
+  .page { max-width: 760px; margin: 0 auto; }
+
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  h2 { font-size: 16px; margin: 36px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 28px; }
+
+  /* ---------- 轮播图区域：结构给你了，样式和逻辑你来填 ---------- */
+
+  .carousel {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;              /* 超出容器的 slide 不显示 */
+    border-radius: 12px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+  }
+
+  .carousel__track {
+    display: flex;
+    height: 100%;
+    /* TODO(第1遍): 让 track 随当前索引移动。
+       提示：用 transform: translateX(...) 而不是改 left */
+  }
+
+  .carousel__slide {
+    flex: 0 0 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    font-size: 40px;
+    font-weight: 700;
+    color: #fff;
+    user-select: none;
+  }
+
+  /* 用渐变色代替图片，保证离线可跑 */
+  .slide-1 { background: linear-gradient(135deg, #2b5876, #4e4376); }
+  .slide-2 { background: linear-gradient(135deg, #134e5e, #71b280); }
+  .slide-3 { background: linear-gradient(135deg, #6a3093, #a044ff); }
+
+  /* TODO(第1遍): 补上 .carousel__btn 的样式（左右按钮，居中垂直） */
+  .carousel__btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    /* 自己补：尺寸、背景、圆角、鼠标样式、hover 效果 */
+  }
+  .carousel__btn--prev { left: 12px; }
+  .carousel__btn--next { right: 12px; }
+
+  /* TODO(第1遍): 补上指示点样式，以及高亮状态 */
+  .carousel__dots {
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+  }
+
+  /* ---------- 下方说明区（不用改） ---------- */
+
+  .checklist { list-style: none; padding: 0; margin: 0; }
+  .checklist li {
+    padding: 6px 0 6px 26px;
+    position: relative;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .checklist li::before {
+    content: "□";
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+  }
+
+  .note {
+    background: var(--panel);
+    border-left: 3px solid var(--accent);
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
+    color: var(--muted);
+    font-size: 14px;
+    margin: 16px 0;
+  }
+
+  code {
+    background: #232833;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #a8c7ff;
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <h1>练习 01 · 轮播图复健</h1>
+  <p class="sub">阶段 A · 第 1–2 周 · 写 3 遍 · 不看 AI 完成第 1 遍</p>
+
+  <div class="note">
+    文件顶部有完整需求、验收标准和学习目标。<strong>先读注释，再动手。</strong>
+    下面的结构已经给你了，你要补的是 <code>CSS 的按钮/指示点</code> 和 <code>全部 JS</code>。
+  </div>
+
+  <!-- ===================== 轮播图 ===================== -->
+  <div class="carousel" id="carousel">
+    <div class="carousel__track" id="track">
+      <div class="carousel__slide slide-1">1</div>
+      <div class="carousel__slide slide-2">2</div>
+      <div class="carousel__slide slide-3">3</div>
+    </div>
+
+    <button class="carousel__btn carousel__btn--prev" type="button" aria-label="上一张">‹</button>
+    <button class="carousel__btn carousel__btn--next" type="button" aria-label="下一张">›</button>
+
+    <!-- TODO(第1遍): 用 JS 生成指示点，不要手写在这里 -->
+    <div class="carousel__dots" id="dots"></div>
+  </div>
+
+  <!-- ===================== 自检区 ===================== -->
+  <h2>第 1 遍 · 目标</h2>
+  <ul class="checklist">
+    <li>点击左右按钮能切换</li>
+    <li>每 3 秒自动播放</li>
+    <li>鼠标移入暂停，移出继续</li>
+    <li>指示点跟着高亮，可点击跳转</li>
+    <li>最后一张的下一张回到第一张</li>
+  </ul>
+
+  <h2>做完之后，问自己这四个问题</h2>
+  <ul class="checklist">
+    <li>为什么用 <code>setInterval</code> 而不是递归 <code>setTimeout</code>？两者行为差别在哪？</li>
+    <li>鼠标移入时你是怎么暂停的？定时器真的清掉了吗？</li>
+    <li>快速连点 10 次，索引还准吗？如果不准，是哪个状态没管住？</li>
+    <li>如果页面上有两个轮播图，你的代码会不会互相干扰？为什么？</li>
+  </ul>
+
+  <div class="note">
+    <strong>卡住了？</strong>先回去看 <code>学习路线.md</code> 阶段 A 的知识点，再看文件顶部的提示。
+    实在写不出来，说明基础需要补——这很正常，把"哪里卡住"记进犯错本，那才是你真正的起点。
+  </div>
+</div>
+
+<script>
+/* ==========================================================================
+   你的代码写在这里。
+   ==========================================================================
+
+   建议的顺序（一次只做一件，每做一件就跑一次页面看效果）：
+
+   Step 1. 拿到 DOM：carousel / track / 左右按钮 / dots 容器
+   Step 2. 状态：currentIndex（当前第几张）、slideCount（一共几张）
+   Step 3. 渲染函数 goTo(index)：
+             - 算出要位移多少像素
+             - 设置 track.style.transform
+             - 更新指示点高亮
+   Step 4. 绑定左右按钮的点击
+   Step 5. 生成指示点，绑定点击
+   Step 6. 加上自动播放 + 鼠标移入移出
+
+   ------------------------------------------------------------------
+   下面给的是"空壳"和注释，不是答案。写不出来就把对应 Step 的注释
+   展开成代码，一步一步来。
+   ------------------------------------------------------------------ */
+
+// ---------- Step 1: 拿 DOM ----------
+const carouselEl = document.getElementById('carousel');
+const trackEl = document.getElementById('track');
+const dotsEl = document.getElementById('dots');
+// TODO: 拿到左右按钮
+
+// ---------- Step 2: 状态 ----------
+let currentIndex = 0;
+// TODO: slideCount 从哪来？不要写死 3
+// TODO: 定时器 id 存在哪个变量里？
+
+// ---------- Step 3: 核心渲染函数 ----------
+/**
+ * 切换到第 index 张
+ * @param {number} index
+ */
+function goTo(index) {
+  // TODO: 1) 处理边界（循环）：如果 index < 0 或 >= slideCount 怎么办？
+  // TODO: 2) 更新 currentIndex
+  // TODO: 3) 计算位移量：-index * 100%，赋给 trackEl.style.transform
+  // TODO: 4) 更新 dots 的高亮（用一个 active 的 class）
+}
+
+// TODO: 写一个 next() 和一个 prev()，内部调用 goTo
+
+// ---------- Step 4: 左右按钮 ----------
+// TODO: 绑定 click 事件
+
+// ---------- Step 5: 指示点 ----------
+/**
+ * 生成指示点
+ * 提示：用 document.createElement('button')，for 循环 slideCount 次
+ */
+function renderDots() {
+  // TODO
+}
+
+// ---------- Step 6: 自动播放 ----------
+/**
+ * 启动自动播放
+ * 提示：setInterval + next()
+ */
+function startAutoPlay() {
+  // TODO
+}
+
+/**
+ * 停止自动播放
+ * 提示：clearInterval，并且把 id 置空，否则重复调用会出问题
+ */
+function stopAutoPlay() {
+  // TODO
+}
+
+// TODO: 鼠标移入 carousel → 停止；移出 → 启动
+// TODO: 页面加载完成后：renderDots() + goTo(0) + startAutoPlay()
+
+/* ==========================================================================
+   第 2 遍做完了再往下写（现在别管）：
+
+   - 把上面的东西包进 function createCarousel(rootEl, options) { ... }
+     返回 { next, prev, goTo, destroy }
+   - destroy() 里要：clearInterval、removeEventListener、清空 dots
+   - 页面上放两个 carousel，用同一个函数初始化，验证互不干扰
+   ========================================================================== */
+</script>
+
+</body>
+</html>
